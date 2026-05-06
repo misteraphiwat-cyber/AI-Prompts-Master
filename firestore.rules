@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Auth Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // Check admin status from existing profile
+    function isAdmin() { 
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.status == 'admin';
+    }
+
+    // Validation Helpers
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    function isValidProfile(data) {
+      return data.keys().hasAll(['email', 'status', 'usage_count', 'last_reset_date']) &&
+             data.keys().size() == 4 &&
+             (data.email == null || (data.email is string && data.email.size() <= 200)) &&
+             data.status in ['free', 'vip', 'admin'] &&
+             data.usage_count is number &&
+             data.last_reset_date is string && data.last_reset_date.size() <= 20;
+    }
+
+    function isValidPrompt(data) {
+      return data.keys().hasAll(['title', 'description', 'content', 'is_vip', 'category', 'image_url', 'createdAt']) &&
+             data.keys().size() == 7 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.content is string && data.content.size() <= 10000 &&
+             data.is_vip is bool &&
+             data.category is string && data.category.size() <= 100 &&
+             data.image_url is string && data.image_url.size() <= 1000 &&
+             (data.createdAt is timestamp || data.createdAt == null);
+    }
+
+    // Profiles
+    match /profiles/{userId} {
+      // Allow get if owner or admin
+      allow get, list: if isOwner(userId) || isAdmin();
+      
+      // Allow create if own profile and status is free (or specific admin email)
+      allow create: if isSignedIn() && isOwner(userId) && isValidProfile(request.resource.data) && (
+        request.resource.data.status == 'free' || 
+        (request.resource.data.email == 'misteraphiwat@gmail.com' && request.resource.data.status == 'admin')
+      );
+
+      // Allow update if owner (only usage/reset or promotion for specific email) or admin (full)
+      allow update: if (isOwner(userId) || isAdmin()) && isValidProfile(request.resource.data) && (
+        (isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usage_count', 'last_reset_date'])) ||
+        (isOwner(userId) && request.resource.data.email == 'misteraphiwat@gmail.com' && request.resource.data.status == 'admin') ||
+        isAdmin()
+      );
+    }
+
+    // Prompts
+    match /prompts/{promptId} {
+      allow list: if true;
+      allow get: if true;
+      allow create, update: if isAdmin() && isValidPrompt(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // System
+    match /system/connection {
+      allow read: if true;
+    }
+  }
+}

@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Sarabun", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Sarabun", sans-serif;
+  
+  --color-gold: #f59e0b;
+  --color-gold-dark: #b45309;
+}
+
+@layer base {
+  body {
+    @apply bg-[#050505] text-white font-sans antialiased;
+  }
+}
+
+.glass-card {
+  @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl;
+}
+
+.gold-gradient {
+  background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+}
+

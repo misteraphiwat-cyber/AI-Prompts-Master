@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "User Profile",
+      "description": "Represents a user's subscription and usage status",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "status": { "type": "string", "enum": ["free", "vip", "admin"] },
+        "usage_count": { "type": "number" },
+        "last_reset_date": { "type": "string", "format": "date" }
+      },
+      "required": ["email", "status", "usage_count", "last_reset_date"]
+    },
+    "Prompt": {
+      "title": "AI Prompt",
+      "description": "A saved AI prompt with metadata",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "content": { "type": "string" },
+        "is_vip": { "type": "boolean" },
+        "category": { "type": "string" },
+        "image_url": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "content", "is_vip", "category", "image_url", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": "Profile",
+      "description": "User profile data"
+    },
+    "/prompts/{promptId}": {
+      "schema": "Prompt",
+      "description": "Collection of available AI prompts"
+    }
+  }
+}
