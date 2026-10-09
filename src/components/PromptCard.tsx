@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 interface PromptCardProps {
+  key?: React.Key;
   prompt: {
     id: string;
     title: string;

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth, checkAndResetQuota } from '../firebase/config';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Trophy, Zap, Search } from 'lucide-react';
+import { Sparkles, Trophy, Zap, Search, X, Filter, Tag, RotateCcw, Crown, Layers } from 'lucide-react';
 import PromptCard from '../components/PromptCard';
 import { cn } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
@@ -13,6 +13,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [accessFilter, setAccessFilter] = useState<'all' | 'vip' | 'free'>('all');
 
   useEffect(() => {
     // Fetch Prompts
@@ -82,14 +83,66 @@ export default function Home() {
     }
   };
 
-  const categories = ['All', 'Marketing', 'Creative', 'Technical', 'Business', 'Productivity'];
+  const defaultCategories = ['All', 'Marketing', 'Creative', 'Technical', 'Business', 'Productivity'];
 
-  const filteredPrompts = prompts.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          p.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Extract all unique categories dynamically from database prompts and default list
+  const categories = useMemo(() => {
+    const fromPrompts = prompts
+      .map((p) => p.category?.trim())
+      .filter((c): c is string => Boolean(c) && c.toLowerCase() !== 'all');
+    const set = new Set([...defaultCategories.filter((c) => c !== 'All'), ...fromPrompts]);
+    return ['All', ...Array.from(set)];
+  }, [prompts]);
+
+  // Count items per category
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: prompts.length };
+    prompts.forEach((p) => {
+      const cat = p.category?.trim() || 'Other';
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [prompts]);
+
+  // Check if search query matches any category names dynamically
+  const matchingCategories = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return [];
+    return categories.filter((c) => c !== 'All' && c.toLowerCase().includes(term));
+  }, [searchTerm, categories]);
+
+  // Dynamic filter for prompts: search across title, description, content body keywords, and category
+  const filteredPrompts = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return prompts.filter((p) => {
+      const titleMatch = p.title?.toLowerCase().includes(term);
+      const descMatch = p.description?.toLowerCase().includes(term);
+      const contentMatch = p.content?.toLowerCase().includes(term);
+      const catMatch = p.category?.toLowerCase().includes(term);
+      const matchesSearch = !term || titleMatch || descMatch || contentMatch || catMatch;
+
+      const matchesCategory =
+        selectedCategory === 'All' ||
+        (p.category && p.category.toLowerCase() === selectedCategory.toLowerCase());
+
+      const matchesAccess =
+        accessFilter === 'all' ||
+        (accessFilter === 'vip' && p.is_vip) ||
+        (accessFilter === 'free' && !p.is_vip);
+
+      return matchesSearch && matchesCategory && matchesAccess;
+    });
+  }, [prompts, searchTerm, selectedCategory, accessFilter]);
+
+  const popularKeywords = ['Copywriting', 'Marketing', 'SEO', 'Midjourney', 'ChatGPT', 'Coding', 'Social Media', 'Email'];
+
+  const hasActiveFilters = searchTerm.trim() !== '' || selectedCategory !== 'All' || accessFilter !== 'all';
+
+  const resetAllFilters = () => {
+    setSearchTerm('');
+    setSelectedCategory('All');
+    setAccessFilter('all');
+  };
 
   const canAccess = (isVip: boolean) => {
     if (!auth.currentUser) return false;
@@ -162,43 +215,214 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl px-4 py-20">
-        <div className="flex flex-col gap-10 md:flex-row md:items-end md:justify-between mb-16">
-          <div>
-            <h2 className="font-display text-3xl font-bold text-white">คลัง Prompt มาสเตอร์</h2>
-            <p className="text-white/50 mt-1">สำรวจและคัดสรร Prompt ที่เหมาะสมกับงานของคุณ</p>
-          </div>
+        <div className="mb-10 flex flex-col gap-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gold/20 text-gold text-xs font-bold">★</span>
+                <h2 className="font-display text-3xl font-bold text-white">คลัง Prompt มาสเตอร์</h2>
+              </div>
+              <p className="text-white/50 mt-1">
+                สำรวจ ค้นหา และคัดสรร Prompt ที่เหมาะสมกับงานของคุณ
+              </p>
+            </div>
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
-              <input
-                type="text"
-                placeholder="ค้นหา prompt..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-12 w-full rounded-2xl bg-white/5 pl-12 pr-4 text-sm ring-1 ring-white/10 focus:outline-none focus:ring-gold sm:w-64"
-              />
+            {/* Quick Access Filter Tabs (All / VIP / Free) */}
+            <div className="flex items-center gap-1.5 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 backdrop-blur-md self-start md:self-auto">
+              <button
+                onClick={() => setAccessFilter('all')}
+                className={cn(
+                  "rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all",
+                  accessFilter === 'all'
+                    ? "bg-white/15 text-white shadow"
+                    : "text-white/60 hover:text-white"
+                )}
+              >
+                ทั้งหมด
+              </button>
+              <button
+                onClick={() => setAccessFilter('vip')}
+                className={cn(
+                  "flex items-center gap-1 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all",
+                  accessFilter === 'vip'
+                    ? "gold-gradient text-black font-bold shadow-md shadow-gold/20"
+                    : "text-gold/80 hover:text-gold"
+                )}
+              >
+                <Crown className="h-3 w-3" />
+                VIP
+              </button>
+              <button
+                onClick={() => setAccessFilter('free')}
+                className={cn(
+                  "flex items-center gap-1 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all",
+                  accessFilter === 'free'
+                    ? "bg-white/15 text-white shadow"
+                    : "text-white/60 hover:text-white"
+                )}
+              >
+                <Zap className="h-3 w-3" />
+                ฟรี (Free)
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* Categories */}
-        <div className="mb-12 flex flex-wrap gap-2">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={cn(
-                "rounded-full px-6 py-2.5 text-xs font-bold tracking-wider transition-all",
-                selectedCategory === cat 
-                  ? "gold-gradient text-black" 
-                  : "bg-white/5 text-white/60 hover:bg-white/10 border border-white/10"
+          {/* Dynamic Search Input Bar */}
+          <div className="relative rounded-2xl bg-white/5 p-2 ring-1 ring-white/10 shadow-2xl backdrop-blur-xl focus-within:ring-gold/60 transition-all">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gold" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาคีย์เวิร์ด, ชื่อ Prompt, คำสั่ง หรือหมวดหมู่..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-12 w-full rounded-xl bg-transparent pl-12 pr-10 text-sm text-white placeholder-white/30 focus:outline-none"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    title="ล้างข้อความค้นหา"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-white/40 hover:bg-white/10 hover:text-white transition-all"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Dynamic Category Selector Dropdown (Quick filter) */}
+              <div className="flex items-center gap-2 border-t border-white/5 pt-2 sm:border-t-0 sm:border-l sm:border-white/10 sm:pt-0 sm:pl-3">
+                <div className="flex items-center gap-1.5 text-xs text-white/40 pl-1">
+                  <Filter className="h-3.5 w-3.5 text-gold" />
+                  <span className="hidden md:inline">หมวดหมู่:</span>
+                </div>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="h-10 rounded-xl bg-black/60 px-3 pr-8 text-xs font-semibold text-white ring-1 ring-white/10 focus:outline-none focus:ring-gold cursor-pointer"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat} className="bg-[#111] text-white">
+                      {cat.toUpperCase()} ({categoryCounts[cat] || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Smart dynamic matched categories banner when user types matching keyword */}
+            {matchingCategories.length > 0 && selectedCategory === 'All' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/5 pt-2.5 px-2">
+                <span className="text-[11px] font-medium text-gold/80 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  ตรงกับหมวดหมู่:
+                </span>
+                {matchingCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setSelectedCategory(cat);
+                      setSearchTerm('');
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-gold/15 hover:bg-gold/25 px-2.5 py-1 text-[11px] font-bold text-gold border border-gold/30 transition-all"
+                  >
+                    <span>{cat}</span>
+                    <span className="text-[9px] opacity-75">({categoryCounts[cat] || 0})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Popular Keywords / Dynamic search chips */}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-white/50">
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-white/40 mr-1">
+              <Tag className="h-3 w-3 text-gold/60" />
+              คีย์เวิร์ดยอดนิยม:
+            </span>
+            {popularKeywords.map((kw) => (
+              <button
+                key={kw}
+                onClick={() => setSearchTerm(searchTerm === kw ? '' : kw)}
+                className={cn(
+                  "rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all",
+                  searchTerm.toLowerCase() === kw.toLowerCase()
+                    ? "bg-gold text-black font-bold"
+                    : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white border border-white/5"
+                )}
+              >
+                #{kw}
+              </button>
+            ))}
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            {categories.map((cat) => {
+              const count = categoryCounts[cat] || 0;
+              const isSelected = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold tracking-wider transition-all",
+                    isSelected
+                      ? "gold-gradient text-black shadow-lg shadow-gold/20 scale-105"
+                      : "bg-white/5 text-white/60 hover:bg-white/10 border border-white/10 hover:text-white"
+                  )}
+                >
+                  <span>{cat.toUpperCase()}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.2 text-[10px] font-bold",
+                      isSelected ? "bg-black/20 text-black" : "bg-white/10 text-white/40"
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Results Summary & Active Filter Clear Button */}
+          <div className="flex items-center justify-between text-xs text-white/40 border-b border-white/5 pb-3">
+            <div>
+              {loading ? (
+                <span>กำลังโหลดข้อมูล Prompt...</span>
+              ) : (
+                <span>
+                  แสดงผล <strong className="text-gold font-bold">{filteredPrompts.length}</strong> จาก {prompts.length} Prompt
+                  {searchTerm && (
+                    <span>
+                      {' '}สำหรับคีย์เวิร์ด <strong className="text-white font-semibold">"{searchTerm}"</strong>
+                    </span>
+                  )}
+                  {selectedCategory !== 'All' && (
+                    <span>
+                      {' '}ในหมวดหมู่ <strong className="text-white font-semibold">"{selectedCategory}"</strong>
+                    </span>
+                  )}
+                  {accessFilter !== 'all' && (
+                    <span>
+                      {' '}แบบ <strong className="text-white font-semibold">"{accessFilter.toUpperCase()}"</strong>
+                    </span>
+                  )}
+                </span>
               )}
-            >
-              {cat.toUpperCase()}
-            </button>
-          ))}
+            </div>
+
+            {hasActiveFilters && (
+              <button
+                onClick={resetAllFilters}
+                className="flex items-center gap-1 text-gold hover:text-gold/80 transition-colors font-medium hover:underline"
+              >
+                <RotateCcw className="h-3 w-3" />
+                ล้างตัวกรองทั้งหมด
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Quota Info for Mobile/Small Screens */}
@@ -240,11 +464,22 @@ export default function Home() {
           ))}
           {!loading && filteredPrompts.length === 0 && (
             <div className="col-span-full py-20 text-center">
-              <div className="mx-auto h-20 w-20 rounded-full bg-white/5 flex items-center justify-center mb-4">
-                <Search className="h-10 w-10 text-white/20" />
+              <div className="mx-auto h-20 w-20 rounded-full bg-white/5 flex items-center justify-center mb-4 ring-1 ring-white/10">
+                <Search className="h-10 w-10 text-gold/40" />
               </div>
               <h3 className="text-xl font-bold text-white">ไม่พบ Prompt ที่คุณค้นหา</h3>
-              <p className="text-white/40 mt-2">ลองใช้คำค้นหาอื่นหรือเปลี่ยนหมวดหมู่</p>
+              <p className="text-white/40 mt-2 max-w-md mx-auto text-sm">
+                ไม่พบข้อมูลที่ตรงกับคำค้นหาหรือหมวดหมู่ที่เลือก ลองใช้คำค้นหาอื่นหรือคลิกล้างตัวกรอง
+              </p>
+              {hasActiveFilters && (
+                <button
+                  onClick={resetAllFilters}
+                  className="mt-6 gold-gradient inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold text-black shadow-lg shadow-gold/20 hover:scale-105 transition-all"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  ล้างตัวกรองและการค้นหาทั้งหมด
+                </button>
+              )}
             </div>
           )}
         </div>
